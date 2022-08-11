@@ -23,7 +23,7 @@ jobs:
           echo "::set-output name=helmRepo::${{ env.HELM_REPO }}"
 
   build:
-    name: Build Production
+    name: Build Staging
     needs: [setup_env]
     uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
     with:
@@ -36,9 +36,9 @@ jobs:
       dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
 
   release:
-    name: Release Production
+    name: Release Staging
     needs: [setup_env, build]
-    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-release.yml@master
     with:
       runner: self-hosted
       appName: ${{needs.setup_env.outputs.appName}}
