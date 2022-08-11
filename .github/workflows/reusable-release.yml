@@ -1,0 +1,60 @@
+name: Reusable Build and Package
+
+on:
+  workflow_call:
+    inputs:
+      appName:
+        required: true
+        type: string
+      helmRepo:
+        required: true
+        type: string
+      dockerImage:
+        required: true
+        type: string
+      imageTag:
+        required: true
+        type: string
+      chartVersion:
+        required: true
+        type: string
+      namespace:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+    secrets:
+      dockerSecret:
+        required: true
+      dockerUsername:
+        required: true
+      dockerRegistry:
+        required: true
+      kubernetesConfig:
+        required: true
+
+jobs:
+  release:
+    name: Deploy & Release
+    runs-on: ${{inputs.runner}}
+    env:
+      REGISTRY: ${{ secrets.dockerRegistry }}
+      APP_NAME: ${{ inputs.appName }}
+      HELM_REPO: ${{ inputs.helmRepo }}
+      IMAGE_TAG: ${{ inputs.imageTag }}
+      CHART_VERSION: ${{ inputs.chartVersion }}
+      DOCKER_IMAGE: ${{ inputs.dockerImage }}
+      DOCKER_SECRET: ${{ secrets.dockerSecret }}
+      DOCKER_USERNAME: ${{ secrets.dockerUsername }}
+      NAMESPACE: ${{inputs.namespace}}
+    steps:
+      - name: Release app in namespace <${{ inputs.namespace }}>
+        uses: koslib/helm-eks-action@master
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
+        with:
+          command: |
+            helm repo add --username ${{ secrets.DOCKER_USERNAME }} --password ${{ secrets.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
+            helm repo update
+            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} -f ./charts/${{env.APP_NAME}}/values.yaml --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --create-namespace

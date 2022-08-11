@@ -1,0 +1,83 @@
+name: Pull Request
+on:
+  pull_request:
+  # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request
+    types:
+      - opened
+      - reopened
+      - closed
+      - synchronize
+    branches:
+      - 'master'
+
+env:
+  HELM_REPO: olli-charts
+  APP_NAME: "my-awesome-app"  # <--- CHANGE THIS
+
+jobs:
+  setup_env:
+    name: Setup environment variables
+    runs-on: self-hosted
+    outputs:
+      appName: ${{steps.setenv.outputs.appName}}
+      helmRepo: ${{steps.setenv.outputs.helmRepo}}
+    steps:
+      - name: set env
+        id: setenv
+        run: |
+          echo "::set-output name=appName::${{ env.APP_NAME }}"
+          echo "::set-output name=helmRepo::${{ env.HELM_REPO }}"
+
+  clean:
+    name: Clean up PR
+    if: ${{ github.event.pull_request.closed == true || github.event.pull_request.merged == true}}
+    needs: [setup_env]
+    runs-on: self-hosted
+    steps:
+      - name: Uninstall helm release
+        uses: koslib/helm-eks-action@master
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+          PR_NAMESPACE: pr-${{github.event.number}}-${{needs.setup_env.outputs.appName}}
+        with:
+          command: helm uninstall ${{needs.setup_env.outputs.appName}} -n $PR_NAMESPACE
+            
+      - name: Delete namespace
+        uses: koslib/helm-eks-action@master
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+          PR_NAMESPACE: pr-${{github.event.number}}-${{needs.setup_env.outputs.appName}}
+        with:
+          command: kubectl delete namespace $PR_NAMESPACE
+
+  build:
+    name: Build PR
+    if: ${{ github.event.pull_request.closed != true && github.event.pull_request.merged != true}}
+    needs: [setup_env]
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    with:
+      runner: self-hosted
+      appName: ${{needs.setup_env.outputs.appName}}
+      helmRepo: ${{needs.setup_env.outputs.helmRepo}}
+    secrets:
+      dockerSecret: ${{secrets.DOCKER_SECRET}}
+      dockerUsername: ${{secrets.DOCKER_USERNAME}}
+      dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
+  release:
+    name: Release PR
+    if: ${{ github.event.pull_request.closed != true && github.event.pull_request.merged != true}}
+    needs: [setup_env, build]
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    with:
+      runner: self-hosted
+      appName: ${{needs.setup_env.outputs.appName}}
+      helmRepo: ${{needs.setup_env.outputs.helmRepo}}
+      dockerImage: ${{needs.build.outputs.dockerImage}}
+      imageTag: ${{needs.build.outputs.imageTag}}
+      chartVersion: ${{needs.build.outputs.chartVersion}}
+      namespace: pr-${{github.event.number}}-${{needs.setup_env.outputs.appName}}
+    secrets:
+      dockerSecret: ${{secrets.DOCKER_SECRET}}
+      dockerUsername: ${{secrets.DOCKER_USERNAME}}
+      dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
+      kubernetesConfig: ${{secrets.KUBE_CONFIG_DATA}}

@@ -1,0 +1,54 @@
+name: Production Build & Release
+
+on:
+  push:
+    branches: ["staging"]
+
+env:
+  HELM_REPO: olli-charts
+  APP_NAME: "my-awesome-app"  # <--- CHANGE THIS
+
+jobs:
+  setup_env:
+    name: Setup environment variables
+    runs-on: self-hosted
+    outputs:
+      appName: ${{steps.setenv.outputs.appName}}
+      helmRepo: ${{steps.setenv.outputs.helmRepo}}
+    steps:
+      - name: set env
+        id: setenv
+        run: |
+          echo "::set-output name=appName::${{ env.APP_NAME }}"
+          echo "::set-output name=helmRepo::${{ env.HELM_REPO }}"
+
+  build:
+    name: Build Production
+    needs: [setup_env]
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    with:
+      runner: self-hosted
+      appName: ${{needs.setup_env.outputs.appName}}
+      helmRepo: ${{needs.setup_env.outputs.helmRepo}}
+    secrets:
+      dockerSecret: ${{secrets.DOCKER_SECRET}}
+      dockerUsername: ${{secrets.DOCKER_USERNAME}}
+      dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
+
+  release:
+    name: Release Production
+    needs: [setup_env, build]
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    with:
+      runner: self-hosted
+      appName: ${{needs.setup_env.outputs.appName}}
+      helmRepo: ${{needs.setup_env.outputs.helmRepo}}
+      dockerImage: ${{needs.build.outputs.dockerImage}}
+      imageTag: ${{needs.build.outputs.imageTag}}
+      chartVersion: ${{needs.build.outputs.chartVersion}}
+      namespace: myapp-staging-namespace  # <--- CHANGE THIS
+    secrets:
+      dockerSecret: ${{secrets.DOCKER_SECRET}}
+      dockerUsername: ${{secrets.DOCKER_USERNAME}}
+      dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
+      kubernetesConfig: ${{secrets.KUBE_CONFIG_DATA}}
