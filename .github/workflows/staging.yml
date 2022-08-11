@@ -1,4 +1,4 @@
-name: Production Build & Release
+name: Staging Build & Release
 
 on:
   push:
