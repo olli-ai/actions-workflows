@@ -25,12 +25,13 @@ jobs:
       - name: set env
         id: setenv
         run: |
+          echo "closed: ${{github.event.pull_request.closed}} ; merged: ${{github.event.pull_request.merged}}"
           echo "::set-output name=appName::${{ env.APP_NAME }}"
           echo "::set-output name=helmRepo::${{ env.HELM_REPO }}"
 
   clean:
     name: Clean up PR
-    if: ${{ github.event.pull_request.closed == true || github.event.pull_request.merged == true}}
+    if: github.event.action == 'closed'
     needs: [setup_env]
     runs-on: self-hosted
     steps:
@@ -52,7 +53,7 @@ jobs:
 
   build:
     name: Build PR
-    if: ${{ github.event.pull_request.closed != true && github.event.pull_request.merged != true}}
+    if: github.event.action != 'closed'
     needs: [setup_env]
     uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
     with:
@@ -65,9 +66,9 @@ jobs:
       dockerRegistry: ${{ secrets.DOCKER_REGISTRY }}
   release:
     name: Release PR
-    if: ${{ github.event.pull_request.closed != true && github.event.pull_request.merged != true}}
+    if: github.event.action != 'closed'
     needs: [setup_env, build]
-    uses: olli-ai/actions-workflows/.github/workflows/reusable-build.yml@master
+    uses: olli-ai/actions-workflows/.github/workflows/reusable-release.yml@master
     with:
       runner: self-hosted
       appName: ${{needs.setup_env.outputs.appName}}
