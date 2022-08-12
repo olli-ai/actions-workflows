@@ -55,6 +55,8 @@ jobs:
           KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
         with:
           command: |
+            helm repo list
             helm repo add --username ${{ secrets.DOCKER_USERNAME }} --password ${{ secrets.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
             helm repo update
+            helm repo list
             helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} -f ./charts/${{env.APP_NAME}}/values.yaml --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --create-namespace
