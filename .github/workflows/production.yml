@@ -47,6 +47,7 @@ jobs:
       imageTag: ${{needs.build.outputs.imageTag}}
       chartVersion: ${{needs.build.outputs.chartVersion}}
       namespace: myapp-production-namespace  # <--- CHANGE THIS
+      environment: ${{needs.build.outputs.buildEnvironment}}
     secrets:
       dockerSecret: ${{secrets.DOCKER_SECRET}}
       dockerUsername: ${{secrets.DOCKER_USERNAME}}

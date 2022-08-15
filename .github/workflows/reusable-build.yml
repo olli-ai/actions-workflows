@@ -35,6 +35,9 @@ on:
       dockerImage:
         description: Docker image
         value: ${{jobs.build.outputs.dockerImage}}
+      buildEnvironment:
+        description: Build Environment
+        value: ${{jobs.build.outputs.buildEnvironment}}
 
 jobs:
   build:
@@ -72,11 +75,13 @@ jobs:
           major_pattern: (CHART-MAJOR)
           minor_pattern: "(CHART-MINOR)"
 
-      - name: Set BUILD_ENV
+      - name: Set Environment
         run: |
           env
           export BRANCH=$([[ $GITHUB_EVENT_NAME = pull_request ]] && echo pr-${{github.event.number}} || echo ${GITHUB_REF##*/})
-          echo "BUILD_ENV=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)" >> $GITHUB_ENV
+          echo "BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)" >> $GITHUB_ENV
+          export BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)
+          echo "BUILD_ENVIRONMENT=$([[ $BUILD_NAME =~ pr-[0-9]+ ]] && echo dev || echo $BUILD_NAME)"
 
       - name: Log in to the Container registry
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
@@ -87,8 +92,8 @@ jobs:
 
       - name: Build & Tag & Push Docker image
         env:
-          TAG: ${{steps.appVersion.outputs.version}}-${{env.BUILD_ENV}}
-          BUILD_ENV: ${{ env.BUILD_ENV }}
+          TAG: ${{steps.appVersion.outputs.version}}-${{env.BUILD_NAME}}
+          BUILD_NAME: ${{ env.BUILD_NAME }}
         run: |
           docker build -t ${{env.APP_NAME}}:${{env.TAG}} .
           docker tag ${{env.APP_NAME}}:${{env.TAG}} ${{env.REGISTRY}}/docker/${{env.APP_NAME}}:${{env.TAG}}
@@ -98,7 +103,7 @@ jobs:
         if: steps.chartVersion.outputs.changed == 'true'
         uses: koslib/helm-eks-action@master
         env:
-          CHART_VERSION: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_ENV}}
+          CHART_VERSION: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_NAME}}
         with:
           command: |
             helm lint ./charts/${{env.APP_NAME}} -f ./charts/${{env.APP_NAME}}/values.yaml
@@ -108,7 +113,8 @@ jobs:
             helm cm-push ${{ env.APP_NAME }}-${{ env.CHART_VERSION }}.tgz ${{env.HELM_REPO}}
     outputs:
       chartName: ${{env.APP_NAME}}
-      chartVersion: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_ENV}}
+      chartVersion: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_NAME}}
       chartChanged: ${{steps.chartVersion.outputs.changed}}
-      imageTag: ${{steps.appVersion.outputs.version}}-${{env.BUILD_ENV}}
+      imageTag: ${{steps.appVersion.outputs.version}}-${{env.BUILD_NAME}}
       dockerImage: docker/${{env.APP_NAME}}
+      buildEnvironment: ${{env.BUILD_ENVIRONMENT}}
