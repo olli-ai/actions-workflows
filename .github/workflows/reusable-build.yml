@@ -107,6 +107,7 @@ jobs:
           CHART_VERSION: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_NAME}}
         with:
           command: |
+            helm dependency update ./charts/${{env.APP_NAME}}
             helm lint ./charts/${{env.APP_NAME}} -f ./charts/${{env.APP_NAME}}/values.yaml
             helm package ./charts/${{env.APP_NAME}} --version ${{env.CHART_VERSION}}
             helm plugin install https://github.com/chartmuseum/helm-push || true
