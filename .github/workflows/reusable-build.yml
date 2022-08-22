@@ -79,8 +79,8 @@ jobs:
         run: |
           env
           export BRANCH=$([[ $GITHUB_EVENT_NAME = pull_request ]] && echo pr-${{github.event.number}} || echo ${GITHUB_REF##*/})
-          echo "BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)" >> $GITHUB_ENV
-          export BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)
+          echo "BUILD_NAME=$([[ $BRANCH = master ]] && echo staging || echo $BRANCH)" >> $GITHUB_ENV
+          export BUILD_NAME=$([[ $BRANCH = master ]] && echo staging || echo $BRANCH)
           echo "BUILD_ENVIRONMENT=$([[ $BUILD_NAME =~ pr-[0-9]+ ]] && echo dev || echo $BUILD_NAME)" >> $GITHUB_ENV
           cat $GITHUB_ENV
 
