@@ -61,4 +61,4 @@ jobs:
             helm repo list
             helm repo add --username ${{ env.DOCKER_USERNAME }} --password ${{ env.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
             helm repo update
-            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} -f ./charts/${{env.APP_NAME}}/values.yaml --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace
+            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace
