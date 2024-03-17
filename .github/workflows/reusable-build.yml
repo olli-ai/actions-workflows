@@ -12,12 +12,17 @@ on:
       runner:
         required: true
         type: string        
+      app_env:
+        required: true
+        type: string
     secrets:
       dockerSecret:
         required: true
       dockerUsername:
         required: true
       dockerRegistry:
+        required: true
+      gcpCredentials:
         required: true
     outputs:
       chartName:
@@ -48,6 +53,7 @@ jobs:
       packages: write
 
     env:
+      ARTIFACT_REGISTRY: asia-southeast1-docker.pkg.dev/olli-iviet
       REGISTRY: ${{ secrets.dockerRegistry }}
       APP_NAME: ${{ inputs.appName }}
       HELM_REPO: ${{ inputs.helmRepo }}
@@ -85,11 +91,11 @@ jobs:
           cat $GITHUB_ENV
 
       - name: Log in to the Container registry
-        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        uses: docker/login-action@v2
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_SECRET }}
+          username: _json_key
+          password: ${{ secrets.gcpCredentials }}
 
       - name: Build & Tag & Push Docker image
         env:
@@ -97,8 +103,8 @@ jobs:
           BUILD_NAME: ${{ env.BUILD_NAME }}
         run: |
           docker build -t ${{env.APP_NAME}}:${{env.TAG}} .
-          docker tag ${{env.APP_NAME}}:${{env.TAG}} ${{env.REGISTRY}}/docker/${{env.APP_NAME}}:${{env.TAG}}
-          docker push ${{env.REGISTRY}}/docker/${{env.APP_NAME}}:${{env.TAG}}
+          docker tag ${{env.APP_NAME}}:${{env.TAG}} ${{env.ARTIFACT_REGISTRY}}/${BUILD_ENVIRONMENT}/${{env.APP_NAME}}:${{env.TAG}}
+          docker push ${{env.ARTIFACT_REGISTRY}}/${BUILD_ENVIRONMENT}/${{env.APP_NAME}}:${{env.TAG}}
 
       - name: Package & Push Helm Chart
         if: steps.chartVersion.outputs.changed == 'true'
@@ -118,5 +124,5 @@ jobs:
       chartVersion: ${{steps.chartVersion.outputs.version}}-${{env.BUILD_NAME}}
       chartChanged: ${{steps.chartVersion.outputs.changed}}
       imageTag: ${{steps.appVersion.outputs.version}}-${{env.BUILD_NAME}}
-      dockerImage: docker/${{env.APP_NAME}}
+      dockerImage: ${{env.APP_NAME}}
       buildEnvironment: ${{env.BUILD_ENVIRONMENT}}
