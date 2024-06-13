@@ -83,36 +83,9 @@ jobs:
         with:
           name: chart-values
 
-      - id: 'auth'
-        uses: 'google-github-actions/auth@v1'
-        with:
-          credentials_json: '${{ secrets.gcpCredentials }}'
-
-      - id: 'get-credentials'
-        uses: 'google-github-actions/get-gke-credentials@v1'
-        with:
-          cluster_name: 'olli-maika-ai'
-          location: 'asia-southeast1'
-      
-      - name: set kubeconfig
-        run: |
-          echo 'KUBE_CONFIG_DATA<<EOF' >> $GITHUB_ENV
-          echo $(cat $KUBECONFIG | base64 -w 0) >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
-
-      # - name: Release app in namespace <${{ inputs.namespace }}>
-      #   uses: olli-ai/helm-eks-action@master
-      #   # env:
-      #   #   KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
-      #   with:
-      #     command: |
-      #       helm repo add --username ${{ env.DOCKER_USERNAME }} --password ${{ env.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
-      #       helm repo update
-      #       helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set appVersion=${{inputs.appVersion}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace --values=${{inputs.customValues}}
-
       - name: Release app in namespace <${{ inputs.namespace }}>
-        # env:
-        #   KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
         run: |
             echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig.yaml
             export KUBECONFIG=kubeconfig.yaml
