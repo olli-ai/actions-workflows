@@ -27,6 +27,15 @@ on:
       environment:
         required: true
         type: string
+      chartFolder:
+        required: true
+        type: string
+      appVersion:
+        required: false
+        type: string
+      customValues:
+        required: false
+        type: string
     secrets:
       dockerSecret:
         required: true
@@ -36,30 +45,75 @@ on:
         required: true
       kubernetesConfig:
         required: true
+      gcpCredentials:
+        required: true
 
 jobs:
   release:
     name: Deploy & Release
     runs-on: ${{inputs.runner}}
     env:
-      ARTIFACT_REGISTRY: asia-southeast1-docker.pkg.dev/olli-iviet
       REGISTRY: ${{ secrets.dockerRegistry }}
       APP_NAME: ${{ inputs.appName }}
       HELM_REPO: ${{ inputs.helmRepo }}
       IMAGE_TAG: ${{ inputs.imageTag }}
+      CHART_FOLDER: ${{ inputs.chartFolder }}
       CHART_VERSION: ${{ inputs.chartVersion }}
       DOCKER_IMAGE: ${{ inputs.dockerImage }}
       DOCKER_SECRET: ${{ secrets.dockerSecret }}
       DOCKER_USERNAME: ${{ secrets.dockerUsername }}
+      GCP_CREDENTIALS: ${{ secrets.gcpCredentials }}
       NAMESPACE: ${{inputs.namespace}}
     steps:
-      - name: Release app in namespace <${{ inputs.namespace }}>
-        uses: koslib/helm-eks-action@master
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
         with:
-          command: |
-            helm repo list
-            helm repo add --username ${{ env.DOCKER_USERNAME }} --password ${{ env.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
-            helm repo update
-            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.ARTIFACT_REGISTRY}}/${{ inputs.environment }}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace
+          registry: ${{ env.REGISTRY }}
+          username: _json_key
+          password: ${{ env.GCP_CREDENTIALS }}
+
+      - name: Download chart values
+        uses: actions/download-artifact@v3
+        with:
+          name: chart-values
+
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.gcpCredentials }}'
+
+      - id: 'get-credentials'
+        uses: 'google-github-actions/get-gke-credentials@v1'
+        with:
+          cluster_name: 'olli-maika-ai'
+          location: 'asia-southeast1'
+      
+      - name: set kubeconfig
+        run: |
+          echo 'KUBE_CONFIG_DATA<<EOF' >> $GITHUB_ENV
+          echo $(cat $KUBECONFIG | base64 -w 0) >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      # - name: Release app in namespace <${{ inputs.namespace }}>
+      #   uses: olli-ai/helm-eks-action@master
+      #   # env:
+      #   #   KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
+      #   with:
+      #     command: |
+      #       helm repo add --username ${{ env.DOCKER_USERNAME }} --password ${{ env.DOCKER_SECRET }} ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart
+      #       helm repo update
+      #       helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} ${{ env.HELM_REPO }}/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set appVersion=${{inputs.appVersion}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace --values=${{inputs.customValues}}
+
+      - name: Release app in namespace <${{ inputs.namespace }}>
+        # env:
+        #   KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
+        run: |
+            echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig.yaml
+            export KUBECONFIG=kubeconfig.yaml
+            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} oci://${{env.REGISTRY}}/olli-iviet/helm-chart/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set appVersion=${{inputs.appVersion}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace --values=${{inputs.customValues}}
