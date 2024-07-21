@@ -30,22 +30,13 @@ on:
       chartFolder:
         required: true
         type: string
-      appVersion:
-        required: false
-        type: string
       customValues:
         required: false
         type: string
     secrets:
-      dockerSecret:
+      AWS_ACCESS_KEY_ID:
         required: true
-      dockerUsername:
-        required: true
-      dockerRegistry:
-        required: true
-      kubernetesConfig:
-        required: true
-      gcpCredentials:
+      AWS_SECRET_ACCESS_KEY:
         required: true
 
 jobs:
@@ -53,30 +44,26 @@ jobs:
     name: Deploy & Release
     runs-on: ${{inputs.runner}}
     env:
-      REGISTRY: ${{ secrets.dockerRegistry }}
+      EKS_CLUSTER: eks-primary-prod-01
+      REGISTRY: 905418372464.dkr.ecr.ap-southeast-1.amazonaws.com
+      REGION: ap-southeast-1
       APP_NAME: ${{ inputs.appName }}
       HELM_REPO: ${{ inputs.helmRepo }}
       IMAGE_TAG: ${{ inputs.imageTag }}
       CHART_FOLDER: ${{ inputs.chartFolder }}
       CHART_VERSION: ${{ inputs.chartVersion }}
       DOCKER_IMAGE: ${{ inputs.dockerImage }}
-      DOCKER_SECRET: ${{ secrets.dockerSecret }}
-      DOCKER_USERNAME: ${{ secrets.dockerUsername }}
-      GCP_CREDENTIALS: ${{ secrets.gcpCredentials }}
       NAMESPACE: ${{inputs.namespace}}
     steps:
-      - name: Install Helm
-        run: |
-          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-          chmod 700 get_helm.sh
-          ./get_helm.sh
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: _json_key
-          password: ${{ env.GCP_CREDENTIALS }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Download chart values
         uses: actions/download-artifact@v3
@@ -84,9 +71,9 @@ jobs:
           name: chart-values
 
       - name: Release app in namespace <${{ inputs.namespace }}>
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.kubernetesConfig }}
-        run: |
-            echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig.yaml
-            export KUBECONFIG=kubeconfig.yaml
-            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} oci://${{env.REGISTRY}}/olli-iviet/helm-chart/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set appVersion=${{inputs.appVersion}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace --values=${{inputs.customValues}}
+        uses: koslib/helm-eks-action@master
+        with:
+          command: |
+            aws ecr get-login-password --region ${{ env.REGION }} | helm registry login --username AWS --password-stdin ${{ env.REGISTRY }}
+            aws --region ap-southeast-1 eks update-kubeconfig --region ap-southeast-1 --name ${{env.EKS_CLUSTER}}
+            helm upgrade -i -n ${{ env.NAMESPACE }} ${{ env.APP_NAME }} oci://${{env.REGISTRY}}/${{env.HELM_REPO}}/helm-chart/${{ env.APP_NAME }} --version ${{ env.CHART_VERSION }} --set image.repository=${{env.REGISTRY}}/${{env.DOCKER_IMAGE}} --set image.tag=${{env.IMAGE_TAG}} --set appVersion=${{inputs.appVersion}} --set environment=${{inputs.environment}} --set ghEventNum=${{github.event.number}} --create-namespace --values=${{inputs.customValues}}
