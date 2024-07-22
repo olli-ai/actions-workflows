@@ -14,20 +14,14 @@ on:
         type: string
       chartFolder:
         required: true
-        type: string
+        type: string        
       appEnvironment:
         required: true
         type: string
     secrets:
-      dockerSecret:
+      AWS_ACCESS_KEY_ID:
         required: true
-      dockerUsername:
-        required: true
-      dockerRegistry:
-        required: true
-      kubeConfigData:
-        required: true
-      gcpCredentials:
+      AWS_SECRET_ACCESS_KEY:
         required: true
     outputs:
       chartName:
@@ -45,9 +39,6 @@ on:
       dockerImage:
         description: Docker image
         value: ${{jobs.build.outputs.dockerImage}}
-      # buildEnvironment:
-      #   description: Build Environment
-      #   value: ${{jobs.build.outputs.buildEnvironment}}
       appVersion:
         description: App Version
         value: ${{jobs.build.outputs.appVersion}}
@@ -61,75 +52,67 @@ jobs:
       packages: write
 
     env:
-      REGISTRY: ${{ secrets.dockerRegistry }}
+      EKS_CLUSTER: eks-primary-prod-01
+      REGISTRY: 905418372464.dkr.ecr.ap-southeast-1.amazonaws.com
+      REGION: ap-southeast-1
       APP_NAME: ${{ inputs.appName }}
-      APP_ENVIRONMENT: ${{ inputs.appEnvironment }}
-      CHART_FOLDER: ${{inputs.chartFolder}}
       HELM_REPO: ${{ inputs.helmRepo }}
-      DOCKER_SECRET: ${{ secrets.dockerSecret }}
-      DOCKER_USERNAME: ${{ secrets.dockerUsername }}
-      KUBE_CONFIG_DATA: ${{ secrets.kubeConfigData }}
-      GCP_CREDENTIALS: ${{ secrets.gcpCredentials }}
+      CHART_FOLDER: ${{inputs.chartFolder}}
+      APP_ENVIRONMENT: ${{ inputs.appEnvironment }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Generate Tag Version
         id: appVersion
         uses: paulhatch/semantic-version@v4.0.2
         with:
           bump_each_commit: true
+    
 
       - name: Chart version
         id: chartVersion
         uses: paulhatch/semantic-version@v4.0.2
         with:
           bump_each_commit: true
-          change_path: "./charts"
+          change_path: "charts/${{ env.APP_NAME }}"
           major_pattern: (CHART-MAJOR)
           minor_pattern: "(CHART-MINOR)"
-
-
-      # - name: Set Environment
-      #   run: |
-      #     env
-      #     export BRANCH=$([[ $GITHUB_EVENT_NAME = pull_request ]] && echo pr-${{github.event.number}} || echo ${GITHUB_REF##*/})
-      #     echo "BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)" >> $GITHUB_ENV
-      #     export BUILD_NAME=$([[ $BRANCH = master ]] && echo production || echo $BRANCH)
-      #     echo "BUILD_ENVIRONMENT=$([[ $BUILD_NAME =~ pr-[0-9]+ ]] && echo dev || echo $BUILD_NAME)" >> $GITHUB_ENV
-      #     cat $GITHUB_ENV
-
+      
       - name: Upload chart values
         uses: actions/upload-artifact@v3
         with:
           name: chart-values
           path: charts/${{env.CHART_FOLDER}}/values*.y*ml
-
-      # - name: Log in to the Container registry
-      #   uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
-      #   with:
-      #     registry: ${{ env.REGISTRY }}
-      #     username: ${{ env.DOCKER_USERNAME }}
-      #     password: ${{ env.DOCKER_SECRET }}
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: _json_key
-          password: ${{ env.GCP_CREDENTIALS }}
+      
+      - name: Create ECR repository
+        run: |
+          aws --region ${{ env.REGION }} ecr describe-repositories \
+          --repository-names olli-iviet/${{ env.APP_ENVIRONMENT }}/${{env.APP_NAME}} || \
+          aws --region ${{ env.REGION }} ecr create-repository \
+          --repository-name olli-iviet/${{ env.APP_ENVIRONMENT }}/${{env.APP_NAME}}
 
       - name: Build & Tag & Push Docker image
         env:
           TAG: ${{steps.appVersion.outputs.version}}-${{env.APP_ENVIRONMENT}}
-          # BUILD_NAME: ${{ env.BUILD_NAME }}
         run: |
-          docker build -t ${{env.APP_NAME}}:${{env.TAG}} .
+          DOCKER_BUILDKIT=0 docker build -t ${{env.APP_NAME}}:${{env.TAG}} .
           docker tag ${{env.APP_NAME}}:${{env.TAG}} ${{env.REGISTRY}}/olli-iviet/${{env.APP_ENVIRONMENT}}/${{env.APP_NAME}}:${{env.TAG}}
           docker push ${{env.REGISTRY}}/olli-iviet/${{env.APP_ENVIRONMENT}}/${{env.APP_NAME}}:${{env.TAG}}
-
+      
       - name: Install Helm
         run: |
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
@@ -138,31 +121,17 @@ jobs:
 
       - name: Package & Push Helm Chart
         if: steps.chartVersion.outputs.changed == 'true'
+        uses: koslib/helm-eks-action@master
         env:
           CHART_VERSION: ${{steps.chartVersion.outputs.version}}-${{env.APP_ENVIRONMENT}}
-          KUBE_CONFIG_DATA: ${{ env.KUBE_CONFIG_DATA }}
-        run: |
+        with:
+          command: |
+            aws ecr get-login-password --region ${{ env.REGION }} | helm registry login --username AWS --password-stdin ${{ env.REGISTRY }}
             helm dependency update ./charts/${{env.CHART_FOLDER}}
             helm lint ./charts/${{env.CHART_FOLDER}} -f ./charts/${{env.CHART_FOLDER}}/values.yaml
             helm package ./charts/${{env.CHART_FOLDER}} --version ${{env.CHART_VERSION}}
             export CHART_ARCHIVE=$(ls *.tgz)
-            helm push $CHART_ARCHIVE oci://${{env.REGISTRY}}/olli-iviet/helm-chart
-      # - name: Package & Push Helm Chart
-      #   if: steps.chartVersion.outputs.changed == 'true'
-      #   uses: koslib/helm-eks-action@master
-      #   env:
-      #     CHART_VERSION: ${{steps.chartVersion.outputs.version}}-${{env.APP_ENVIRONMENT}}
-      #   with:
-      #     command: |
-      #       helm dependency update ./charts/${{env.CHART_FOLDER}}
-      #       helm lint ./charts/${{env.CHART_FOLDER}} -f ./charts/${{env.CHART_FOLDER}}/values.yaml
-      #       helm package ./charts/${{env.CHART_FOLDER}} --version ${{env.CHART_VERSION}}
-      #       export CHART_ARCHIVE=$(ls *.tgz)
-      #       helm plugin install https://github.com/chartmuseum/helm-push || true
-      #       helm repo add ${{ env.HELM_REPO }} https://${{env.REGISTRY}}/chartrepo/helm-chart --username ${{ env.DOCKER_USERNAME }} --password ${{ env.DOCKER_SECRET }}
-      #       helm cm-push $CHART_ARCHIVE ${{env.HELM_REPO}}
-      #       rm -rf $CHART_ARCHIVE
-      #       rm -rf ./charts/${{env.CHART_FOLDER}}/charts
+            helm push $CHART_ARCHIVE oci://${{env.REGISTRY}}//${{env.HELM_REPO}}/helm-chart/
     outputs:
       chartName: ${{env.APP_NAME}}
       chartVersion: ${{steps.chartVersion.outputs.version}}-${{env.APP_ENVIRONMENT}}
@@ -170,4 +139,3 @@ jobs:
       imageTag: ${{steps.appVersion.outputs.version}}-${{env.APP_ENVIRONMENT}}
       appVersion: ${{steps.appVersion.outputs.version}}
       dockerImage: olli-iviet/${{ env.APP_ENVIRONMENT }}/${{env.APP_NAME}}
-      # buildEnvironment: ${{env.BUILD_ENVIRONMENT}}
